@@ -1,0 +1,11 @@
+# runtime data, never commit
+target/
+dist/
+work/
+backup-*/
+*.img
+*.img.gz
+*.7z
+*.xz
+*.log
+sha256sums.txt

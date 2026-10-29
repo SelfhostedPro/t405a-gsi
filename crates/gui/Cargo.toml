@@ -1,0 +1,17 @@
+[package]
+name = "t405a-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "t405a-gsi-gui"
+path = "src/main.rs"
+
+[dependencies]
+t405a-core = { path = "../core" }
+anyhow = "1"
+dirs = "6"
+image = { version = "0.25", default-features = false, features = ["png"] }
+eframe = { version = "0.32", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui = "0.32"
