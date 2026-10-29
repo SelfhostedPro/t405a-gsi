@@ -46,6 +46,9 @@ enum Cmd {
         /// Use the LineageOS GSI built with Google apps (GApps)
         #[arg(long, conflicts_with = "image")]
         gapps: bool,
+        /// Replace an existing LineageOS/GSI install
+        #[arg(long)]
+        force: bool,
         #[arg(long)]
         dry_run: bool,
     },
@@ -116,9 +119,18 @@ fn run() -> anyhow::Result<()> {
             backup,
             image,
             gapps,
+            force,
             dry_run,
         } => {
-            core::flash::flash(&rep, &settings, &backup, image.as_deref(), gapps, dry_run)?;
+            core::flash::flash(
+                &rep,
+                &settings,
+                &backup,
+                image.as_deref(),
+                gapps,
+                force,
+                dry_run,
+            )?;
         }
         Cmd::Restore {
             backup,
@@ -137,7 +149,7 @@ fn run() -> anyhow::Result<()> {
                 core::unlock::unlock(&rep, &settings)?;
             }
             let backup = core::backup::backup(&rep, &settings, None)?;
-            core::flash::flash(&rep, &settings, &backup, None, false, false)?;
+            core::flash::flash(&rep, &settings, &backup, None, false, false, false)?;
         }
     }
     Ok(())

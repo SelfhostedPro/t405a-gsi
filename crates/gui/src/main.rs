@@ -87,6 +87,7 @@ struct App {
     custom_image: String,
     use_custom: bool,
     gapps: bool,
+    reflash: bool,
     step: Step,
     done_steps: HashSet<Step>,
     log: String,
@@ -325,6 +326,7 @@ impl App {
             custom_image: String::new(),
             use_custom: false,
             gapps: demo,
+            reflash: false,
             step: if demo { SHOT_STEPS[0] } else { Step::Connect },
             done_steps,
             log: if demo {
@@ -915,6 +917,12 @@ impl App {
                 );
             }
 
+            ui.add_space(8.0);
+            ui.checkbox(
+                &mut self.reflash,
+                "Allow re-flash (replace the current LineageOS/GSI)",
+            );
+
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 let ready = !self.busy && backup_ok && image_ok;
@@ -927,6 +935,7 @@ impl App {
                         None
                     };
                     let gapps = self.gapps && !self.use_custom;
+                    let force = self.reflash;
                     self.start_job(ctx, move |rep, tx| {
                         core::flash::flash(
                             rep,
@@ -934,6 +943,7 @@ impl App {
                             &backup,
                             image.as_deref(),
                             gapps,
+                            force,
                             false,
                         )?;
                         let _ = tx.send(Msg::StepDone(Step::Flash));
@@ -949,8 +959,17 @@ impl App {
                         None
                     };
                     let gapps = self.gapps && !self.use_custom;
+                    let force = self.reflash;
                     self.start_job(ctx, move |rep, _tx| {
-                        core::flash::flash(rep, &settings, &backup, image.as_deref(), gapps, true)
+                        core::flash::flash(
+                            rep,
+                            &settings,
+                            &backup,
+                            image.as_deref(),
+                            gapps,
+                            force,
+                            true,
+                        )
                     });
                 }
             });

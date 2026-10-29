@@ -20,12 +20,15 @@ A/B with virtual A/B and dynamic `super`.
 | Connect | *Check device* | `check` | Shows model, build, slot, lock state, supported bootloader |
 | Unlock | *Unlock bootloader* | `unlock` | Sends the verified 38-byte LK payload once; wipes userdata; leaves orange/unlocked |
 | Back up | *Back up stock* | `backup` | Boots a userdebug GSI via DSU, gets `adb root`, dumps every partition except userdata/cache/whole disks, with SHA-256SUMS |
-| Flash | *Flash GSI* | `flash --backup DIR` | Resizes `system_a` if needed, flashes the image (add `--gapps` for Google apps), patches `vbmeta_a`, walks through the factory reset |
+| Flash | *Flash GSI* | `flash --backup DIR` | Resizes `system_a` if needed, flashes the image (add `--gapps` for Google apps), patches `vbmeta_a`, walks through the factory reset. `--force` re-flashes over an existing GSI |
 | Restore | *Restore stock* | `restore --backup DIR` | Flashes stock boot/vbmeta/super back |
 
 LineageOS 23.2 (MisterZtr, Android 16 QPR2, `VANILLA-EXT4`) is the default
 image. The Flash step also accepts **any raw ext4 arm64 GSI** via the *Use a
 custom raw ext4 GSI image* checkbox (CLI: `--image PATH`).
+
+Use *Allow re-flash* (CLI: `--force`) to replace an existing LineageOS/GSI
+install, for example to switch from vanilla to GApps.
 
 For Google apps, tick *Include Google apps (GApps GSI)* (CLI: `--gapps`). That
 uses the LineageOS 23.2 `GAPPS-EXT4` build. The official
@@ -105,6 +108,7 @@ t405a-gsi unlock                 # type UNLOCK T405A
 t405a-gsi backup --out ~/stock-backup/t405a
 t405a-gsi flash --backup ~/stock-backup/t405a
 t405a-gsi flash --backup ~/stock-backup/t405a --gapps          # LineageOS + Google apps
+t405a-gsi flash --backup ~/stock-backup/t405a --gapps --force  # replace an existing GSI
 t405a-gsi flash --backup ~/stock-backup/t405a --image /path/to/other-gsi.img
 t405a-gsi flash --backup ~/stock-backup/t405a --dry-run
 t405a-gsi restore --backup ~/stock-backup/t405a --dry-run
@@ -181,8 +185,11 @@ The procedure was run end to end on an April-2026 unit
 - LineageOS 23.2 booted after resizing `system_a` to 3 GB and patching
   `vbmeta_a`.
 - The GApps archive was SHA-1/MD5-verified; its raw ext4 image is 3,446,353,920
-  bytes and contains `GmsCore`. The `--gapps` dry-run against the real backup
-  produced the expected resize/flash/vbmeta plan.
+  bytes and contains `GmsCore`. It was then flashed over the vanilla install
+  with `--force`: `ro.lineage.version=23.2-20260524-GAPPS-EXT4-GSI`, with
+  Google Play services, GSF and Play Store (`com.android.vending`) present;
+  Wi-Fi, both cameras, speaker and battery reporting checked. Use `--force`
+  to re-flash an existing LineageOS/GSI install.
 - Working: boot, touch, display 1280x1840 (60/90 Hz), rotation, Wi-Fi
   (5 GHz/WPA3), Bluetooth, speakers/mic, both cameras, charging/battery,
   sleep/wake, brightness, sensors, USB adb. No SD card slot.

@@ -22,6 +22,7 @@ pub fn flash(
     backup: &Path,
     image: Option<&Path>,
     gapps: bool,
+    force: bool,
     dry_run: bool,
 ) -> Result<()> {
     let manifest = load_backup(backup)?;
@@ -66,8 +67,8 @@ pub fn flash(
     if summary.locked != "0" {
         anyhow::bail!("bootloader is locked; unlock first");
     }
-    if !summary.lineage.is_empty() {
-        anyhow::bail!("a LineageOS GSI is already running");
+    if !summary.lineage.is_empty() && !force {
+        anyhow::bail!("a LineageOS GSI is already running; pass --force to replace it");
     }
 
     device::ensure_adb(rep)?;
@@ -124,7 +125,7 @@ pub fn flash(
         "  recovery menu -> Wipe data/factory reset -> Factory data reset -> Reboot system now",
     );
     proc::fastboot_ok(rep, &["reboot", "recovery"])?;
-    device::wait_for_adb(rep, 1200, true)?;
+    device::wait_for_adb(rep, 3600, true)?;
     let now = device::summary(rep)?;
     if !now.lineage.is_empty() {
         rep.log(&format!("LineageOS booted: {}", now.lineage));
