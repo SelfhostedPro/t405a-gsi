@@ -56,8 +56,14 @@ are built from source).
 #   dist/windows/t405a-gsi.exe
 ```
 
-Prebuilt CI artifacts (and release assets for `v*` tags) are on the
-[Actions page](https://github.com/SelfhostedPro/t405a-gsi/actions).
+Every push to `main` builds Linux, macOS and Windows binaries and publishes a
+GitHub Release under the next patch tag (`v0.1.0`, `v0.1.1`, ...). Push a `v*`
+tag manually to release that exact version. Assets are
+`t405a-gsi-linux-x86_64.tar.gz`, `t405a-gsi-macos-arm64.zip` and
+`t405a-gsi-windows-x86_64.zip` on the
+[Releases page](https://github.com/SelfhostedPro/t405a-gsi/releases). The macOS
+app is unsigned; right-click Open or run `xattr -dr com.apple.quarantine` if
+Gatekeeper objects.
 
 Development:
 
