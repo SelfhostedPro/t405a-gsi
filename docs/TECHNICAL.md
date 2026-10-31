@@ -201,3 +201,61 @@ ext4 system image and uses the same resize/flash/vbmeta flow. Archive:
 `11e782a9207bcb9a6e163577eb5ac7ec577cfd99`, MD5
 `8d5a503a0793c1498e23fde4528db62f`. The extracted image is a raw ext4
 3,446,353,920-byte GSI.
+
+### Magisk root and Play certification (2026-10-30)
+
+Root uses Magisk v31.1 on the stock `init_boot` (this device has no ramdisk in
+`boot`; `init_boot` is the Android 13+ ramdisk partition). The flow:
+
+1. `adb install -r Magisk-v31.1.apk`, then push the backup's stock
+   `init_boot_<slot>.img` to `/sdcard/Download/`.
+2. The user patches it in the app: *Install → Patch firmware / image → Select
+   from storage*. Magisk writes `magisk_patched-<ver>_<rand>.img` to Download;
+   the tool waits for a name that was not there before, pulls it and checks
+   the `ANDROID!` boot header.
+3. Reboot to fastbootd (`adb reboot fastboot`), then to LK fastboot
+   (`fastboot reboot bootloader`), flash `init_boot_<slot>`, reboot.
+
+Only `init_boot_<slot>` is written; `vbmeta_a` already has verification
+disabled from the GSI flash, so no vbmeta change is needed. `restore` flashes
+the stock `init_boot_<slot>` back.
+
+Magisk v31.1 changed the access model: no reactive `su` prompts and no app
+hiding/repackaging. Root is pre-granted per UID in the Superuser tab, so
+`adb shell` appears as **Shell** and is denied until switched on there. That
+is why `playfix` and the rooted `playid` path check `su -c 'id -u'` and fall
+back to instructions instead of waiting for a dialog.
+
+**Do not use `adb root` on this GSI.** On the 2026-10-30 GApps build it
+answered `restarting adbd as root`, then adbd stopped reading its USB endpoint
+(the host sent CNXN, the read timed out and the transport went offline); only
+a reboot brought adb back. The backup flow still uses `adb root` inside the
+TrebleDroid DSU, where it works.
+
+Play Store certification is separate from Play Integrity. The uncertified page
+wants the **GSF ID** (`android_id` in
+`/data/data/com.google.android.gsf/databases/gservices.db`), not the
+`Settings.Secure.ANDROID_ID`/SSAID. The tool runs Google's documented command
+first and shows its raw output, so the value can be copied straight into the
+page. In order:
+
+- `sqlite3 /data/user/$(cmd activity get-current-user)/*/*/gservices.db
+  "select * from main where name = \"android_id\";"` — executed directly when
+  adbd itself is root (rooted USB debugging) or through Magisk's
+  `su -c '...'` when Shell is granted. The device shell expands the current
+  user and the package/database wildcard;
+- the same select against the fixed
+  `/data/data/com.google.android.gsf/databases/gservices.db` path;
+- `content query --uri content://com.google.android.gsf.gservices --projection
+  value --where "name='android_id'"` as the shell user.
+
+The raw line (`android_id|<value>`) is kept for display and copying. gservices
+stores a 64-bit value; the page accepts it in decimal or as 16 hex digits, so
+both forms are printed. After registering: clear Play Store data, reboot and
+wait for Google to sync.
+
+PlayIntegrityFork v18 is a Zygisk module that spoofs Build fields to the
+DroidGuard process for the legacy DEVICE verdict. It ships no fingerprint by
+design; `autopif4.sh` (module Action button) can generate a Pixel Canary one,
+which now suits STRONG-integrity setups rather than DEVICE. A private
+fingerprint in `custom.pif.prop` is the durable option.

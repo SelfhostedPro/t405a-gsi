@@ -21,6 +21,7 @@ A/B with virtual A/B and dynamic `super`.
 | Unlock | *Unlock bootloader* | `unlock` | Sends the verified 38-byte LK payload once; wipes userdata; leaves orange/unlocked |
 | Back up | *Back up stock* | `backup` | Boots a userdebug GSI via DSU, gets `adb root`, dumps every partition except userdata/cache/whole disks, with SHA-256SUMS |
 | Flash | *Flash GSI* | `flash --backup DIR` | Resizes `system_a` if needed, flashes the image (add `--gapps` for Google apps), patches `vbmeta_a`, walks through the factory reset. `--force` re-flashes over an existing GSI |
+| Root & Play | *Install Magisk (root)* | `root --backup DIR`, `playfix`, `playid` | Patches the stock `init_boot_<slot>` with Magisk and flashes it, installs PlayIntegrityFork, reads the GSF ID for Play Store certification |
 | Restore | *Restore stock* | `restore --backup DIR` | Flashes stock boot/vbmeta/super back |
 
 LineageOS 23.2 (MisterZtr, Android 16 QPR2, `VANILLA-EXT4`) is the default
@@ -73,7 +74,7 @@ Development:
 ```sh
 cargo run -p t405a-gui
 cargo run -p t405a-gsi -- check
-# Headless UI captures for review: writes 01-connect.png ... 05-restore.png
+# Headless UI captures for review: writes 01-connect.png ... 06-restore.png
 cargo run -p t405a-gui -- --screenshots /tmp/t405a-ui
 ```
 
@@ -92,7 +93,10 @@ driver-sensitive step (see below).
    GSI through DSU, roots it, dumps the partitions to the work directory.
 4. **Flash GSI** — pick the stock backup (needed for `vbmeta_a.img`), optionally
    a custom `.img`, press *Flash GSI*, then do the recovery factory reset.
-5. **Restore stock** — flashes the backup's boot/vbmeta/super images and asks
+5. **Root & Play** (optional) — install Magisk by patching the stock
+   `init_boot_<slot>` from the backup, install PlayIntegrityFork, and read the
+   GSF ID for Play Store certification.
+6. **Restore stock** — flashes the backup's boot/vbmeta/super images and asks
    for a recovery factory reset.
 
 The work directory defaults to the platform data directory
@@ -111,6 +115,10 @@ t405a-gsi flash --backup ~/stock-backup/t405a --gapps          # LineageOS + Goo
 t405a-gsi flash --backup ~/stock-backup/t405a --gapps --force  # replace an existing GSI
 t405a-gsi flash --backup ~/stock-backup/t405a --image /path/to/other-gsi.img
 t405a-gsi flash --backup ~/stock-backup/t405a --dry-run
+t405a-gsi root --backup ~/stock-backup/t405a                 # Magisk root
+t405a-gsi root --backup ~/stock-backup/t405a --patched IMG   # image patched earlier
+t405a-gsi playfix                                            # PlayIntegrityFork
+t405a-gsi playid                                             # GSF ID for certification
 t405a-gsi restore --backup ~/stock-backup/t405a --dry-run
 ```
 
@@ -123,6 +131,46 @@ zip from a custom recovery, which this device does not have. The GApps build is
 still an unofficial LineageOS GSI: Play certification and some Google features
 may need a certification/spoofing fix, and Google apps are not part of
 LineageOS itself.
+
+## Play certification and Play Integrity
+
+After a GApps GSI boots, the Play Store may say **Device is not certified**.
+That is an ID registration issue, not a ROM bug:
+
+1. Run `t405a-gsi playid` (or *Read GSF ID* in the app). It runs Google's
+   uncertified-page command —
+   `sqlite3 /data/user/$(cmd activity get-current-user)/*/*/gservices.db "select * from main where name = \"android_id\";"`
+   — as root (rooted USB debugging, or Magisk's Shell) and shows the raw
+   output plus the ID in hex and decimal, with copy buttons. If the shell
+   cannot read `gservices.db`, install root first and grant Shell in Magisk's
+   Superuser tab.
+2. Register the ID at <https://www.google.com/android/uncertified/> with the
+   Google account used on the tablet. The page accepts either form.
+3. Clear Play Store data (*Settings → Apps → Play Store → Storage → Clear
+   data*), reboot, and allow Google some time to sync.
+
+Magisk root and Play Integrity (Wallet, some banking apps) are separate:
+
+```sh
+t405a-gsi root --backup ~/stock-backup/t405a
+t405a-gsi playfix
+```
+
+`root` downloads the official Magisk v31.1 APK, installs it, pushes the stock
+`init_boot_<slot>.img` from the backup, and waits while you patch it in the app
+(*Magisk → Install → Patch firmware / image → Select from storage*). It then
+flashes `init_boot_<slot>` in LK fastboot and checks that Magisk is running.
+Use `--patched PATH` for an image patched earlier.
+
+Magisk v31.1 removed root prompts and app hiding: grant root to **Shell** from
+the Superuser tab, and there is nothing to hide. PlayIntegrityFork v18 is a
+Zygisk module and ships **no fingerprint**; run its Action button
+(`autopif4`) or add a `custom.pif.prop`, or it will not fix DEVICE integrity.
+
+Do not use `adb root` on this GSI: it restarts adbd and the device then stops
+answering adb until it is rebooted (seen on the 2026-10-30 GApps build).
+Magisk is the supported root path. `restore` puts the stock `init_boot_<slot>`
+back and removes Magisk.
 
 ## Custom GSIs
 
@@ -142,6 +190,10 @@ Android 16 or newer GSI for a 202504 vendor.
 - MisterZtr LineageOS 23.2 `GAPPS-EXT4-GSI.7z`, 1,167,859,370 bytes, SHA-1
   `11e782a9207bcb9a6e163577eb5ac7ec577cfd99`, MD5
   `8d5a503a0793c1498e23fde4528db62f`
+- Magisk `v31.1` APK, 10,679,283 bytes, SHA-256
+  `89cefac0a318afa39fb3880c45c87b036c05bc1ebf02a7a715b7f8d7c26ac6e7`
+- PlayIntegrityFork `v18` zip, 227,895 bytes, SHA-256
+  `625ebe65631f761e1521009f10a205d74255adf2e35732923d65106643cad9a6`
 
 ## Safety
 
@@ -154,6 +206,8 @@ Android 16 or newer GSI for a 202504 vendor.
 - The tool never writes `lk`, preloader, `tee`, `gz`, `seccfg`, `protect*`,
   `nvram`, `nvdata`, `nvcfg`, `persist`, `proinfo` or the GPT. Restore is
   limited to boot/init_boot/vendor_boot/dtbo/vbmeta*/super.
+- The root step writes `init_boot_<slot>` only, using the stock image from
+  the backup; `restore` puts the unpatched one back.
 - `flash` refuses without a backup containing a verified `vbmeta_a.img`.
 - Userdata is wiped by the unlock reset and again after the GSI flash. Back up
   anything important first.

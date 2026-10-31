@@ -252,6 +252,17 @@ fn dump_partitions(rep: &dyn Reporter, outdir: &Path, stock: &crate::DeviceSumma
     Ok(())
 }
 
+/// `./init_boot_a.img` -> `init_boot_a`, also for backups whose SHA256SUMS
+/// was written with a path prefix.
+fn partition_name(file: &str) -> String {
+    Path::new(file)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(file)
+        .trim_end_matches(".img")
+        .to_string()
+}
+
 pub fn load_backup(backup: &Path) -> Result<BackupManifest> {
     if !backup.is_dir() {
         anyhow::bail!("backup directory not found: {}", backup.display());
@@ -273,7 +284,7 @@ pub fn load_backup(backup: &Path) -> Result<BackupManifest> {
             let (Some(digest), Some(file)) = (parts.next(), parts.next_back()) else {
                 continue;
             };
-            let name = file.trim_end_matches(".img").to_string();
+            let name = partition_name(file);
             partitions.insert(
                 name,
                 PartitionInfo {
@@ -320,4 +331,16 @@ pub fn verify_backup(rep: &dyn Reporter, backup: &Path, manifest: &BackupManifes
     }
     rep.log("backup verified");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::partition_name;
+
+    #[test]
+    fn strips_a_path_prefix_from_sums_entries() {
+        assert_eq!(partition_name("./init_boot_a.img"), "init_boot_a");
+        assert_eq!(partition_name("init_boot_a.img"), "init_boot_a");
+        assert_eq!(partition_name("/tmp/super.img"), "super");
+    }
 }

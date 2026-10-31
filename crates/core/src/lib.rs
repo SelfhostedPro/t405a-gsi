@@ -9,6 +9,7 @@ pub mod consts;
 pub mod device;
 pub mod download;
 pub mod flash;
+pub mod magisk;
 pub mod proc;
 pub mod report;
 pub mod unlock;
@@ -64,6 +65,22 @@ impl Settings {
             &consts::LINEAGE
         };
         self.lineage_dir().join(spec.archive_name)
+    }
+
+    pub fn magisk_dir(&self) -> PathBuf {
+        self.workdir.join("magisk")
+    }
+
+    pub fn magisk_apk(&self) -> PathBuf {
+        self.magisk_dir().join(consts::MAGISK.file_name)
+    }
+
+    pub fn pif_zip(&self) -> PathBuf {
+        self.magisk_dir().join(consts::PLAY_INTEGRITY_FIX.file_name)
+    }
+
+    pub fn patched_init_boot(&self) -> PathBuf {
+        self.magisk_dir().join("magisk_patched.img")
     }
 
     pub fn lineage_img(&self, gapps: bool) -> PathBuf {

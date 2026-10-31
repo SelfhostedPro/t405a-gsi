@@ -116,6 +116,26 @@ pub const RESTORE_PHYSICAL_A: &[&str] = &[
     "vbmeta_vendor_a",
 ];
 
+/// Official Magisk release used for the root flow.
+pub const MAGISK: Asset = Asset {
+    url: "https://github.com/topjohnwu/Magisk/releases/download/v31.1/Magisk-v31.1.apk",
+    file_name: "Magisk-v31.1.apk",
+    sha256: Some("89cefac0a318afa39fb3880c45c87b036c05bc1ebf02a7a715b7f8d7c26ac6e7"),
+    sha1: None,
+    md5: None,
+    size: 10_679_283,
+};
+
+/// PlayIntegrityFork (osm0sis) module for Play Integrity / certified fingerprints.
+pub const PLAY_INTEGRITY_FIX: Asset = Asset {
+    url: "https://github.com/osm0sis/PlayIntegrityFork/releases/download/v18/PlayIntegrityFork-v18.zip",
+    file_name: "PlayIntegrityFork-v18.zip",
+    sha256: Some("625ebe65631f761e1521009f10a205d74255adf2e35732923d65106643cad9a6"),
+    sha1: None,
+    md5: None,
+    size: 227_895,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

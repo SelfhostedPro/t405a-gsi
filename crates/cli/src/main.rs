@@ -52,6 +52,24 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Patch init_boot with Magisk and flash it (root)
+    Root {
+        /// Stock backup; supplies init_boot_<slot>.img
+        #[arg(long)]
+        backup: PathBuf,
+        /// Use an init_boot image the Magisk app patched earlier
+        #[arg(long)]
+        patched: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Install PlayIntegrityFork (needs Zygisk; ships no fingerprint)
+    Playfix {
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Show the GSF ID to register for Play Store certification
+    Playid,
     /// Restore stock boot/vbmeta/super from a backup
     Restore {
         #[arg(long)]
@@ -131,6 +149,48 @@ fn run() -> anyhow::Result<()> {
                 force,
                 dry_run,
             )?;
+        }
+        Cmd::Root {
+            backup,
+            patched,
+            dry_run,
+        } => {
+            core::magisk::install(&rep, &settings, &backup, patched.as_deref(), dry_run)?;
+        }
+        Cmd::Playfix { dry_run } => {
+            core::magisk::install_pif(&rep, &settings, dry_run)?;
+        }
+        Cmd::Playid => {
+            let ids = core::magisk::play_ids(&rep)?;
+            println!();
+            println!("Android ID (SSAID): {}", ids.android_id);
+            match (&ids.gsf_value, &ids.gsf_hex, ids.gsf_decimal) {
+                (Some(value), Some(hex), Some(decimal)) => {
+                    println!("GSF ID (paste this): {value}");
+                    println!("GSF ID (hex):        {hex}");
+                    println!("GSF ID (decimal):    {decimal}");
+                    println!("read from:           {}", ids.via);
+                    if let Some(raw) = &ids.raw {
+                        println!("command output:      {raw}");
+                    }
+                    println!();
+                    println!("Register the GSF ID at:");
+                    println!("  {}", ids.register_url());
+                    println!(
+                        "Then clear Play Store data (Settings -> Apps -> Play Store -> Storage ->"
+                    );
+                    println!("Clear data), reboot, and give Google a little time to sync.");
+                }
+                _ => {
+                    println!("GSF ID: unavailable ({}).", ids.via);
+                    if let Some(raw) = &ids.raw {
+                        println!("command output: {raw:?}");
+                    }
+                    println!("Google's command needs root: enable rooted USB debugging or run");
+                    println!("`t405a-gsi root`, grant Shell in Magisk's Superuser tab, then run");
+                    println!("`t405a-gsi playid` again.");
+                }
+            }
         }
         Cmd::Restore {
             backup,

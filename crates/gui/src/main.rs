@@ -27,6 +27,7 @@ enum Step {
     Unlock,
     Backup,
     Flash,
+    Root,
     Restore,
 }
 
@@ -37,16 +38,18 @@ impl Step {
             Step::Unlock => "unlock",
             Step::Backup => "backup",
             Step::Flash => "flash",
+            Step::Root => "root",
             Step::Restore => "restore",
         }
     }
 }
 
-const SHOT_STEPS: [Step; 5] = [
+const SHOT_STEPS: [Step; 6] = [
     Step::Connect,
     Step::Unlock,
     Step::Backup,
     Step::Flash,
+    Step::Root,
     Step::Restore,
 ];
 
@@ -55,6 +58,7 @@ enum Msg {
     Progress(f32),
     Summary(Box<DeviceSummary>),
     BackupDone(PathBuf),
+    PlayIds(core::magisk::PlayIds),
     StepDone(Step),
     Done(Result<(), String>),
 }
@@ -95,10 +99,12 @@ struct App {
     progress: f32,
     rx: Option<Receiver<Msg>>,
     summary: Option<DeviceSummary>,
+    play_ids: Option<core::magisk::PlayIds>,
     last_error: Option<String>,
     unlock_ack: bool,
     unlock_phrase: String,
     restore_ack: bool,
+    root_ack: bool,
     screenshot_dir: Option<PathBuf>,
     shot_index: usize,
     shot_frames: u32,
@@ -233,31 +239,28 @@ fn danger_card(ui: &mut egui::Ui, title: &str, body: &str) {
 }
 
 fn primary(ui: &mut egui::Ui, text: &str, enabled: bool) -> egui::Response {
-    let button = egui::Button::new(
-        egui::RichText::new(text)
-            .strong()
-            .color(egui::Color32::WHITE),
-    )
-    .fill(ACCENT)
-    .corner_radius(egui::CornerRadius::same(8))
-    .min_size(egui::vec2(0.0, 36.0));
+    let fill = if enabled { ACCENT } else { STROKE };
+    let color = if enabled { egui::Color32::WHITE } else { MUTED };
+    let button = egui::Button::new(egui::RichText::new(text).strong().color(color))
+        .fill(fill)
+        .corner_radius(egui::CornerRadius::same(8))
+        .min_size(egui::vec2(0.0, 36.0));
     ui.add_enabled(enabled, button)
 }
 
 fn danger_button(ui: &mut egui::Ui, text: &str, enabled: bool) -> egui::Response {
-    let button = egui::Button::new(
-        egui::RichText::new(text)
-            .strong()
-            .color(egui::Color32::WHITE),
-    )
-    .fill(DANGER)
-    .corner_radius(egui::CornerRadius::same(8))
-    .min_size(egui::vec2(0.0, 36.0));
+    let fill = if enabled { DANGER } else { STROKE };
+    let color = if enabled { egui::Color32::WHITE } else { MUTED };
+    let button = egui::Button::new(egui::RichText::new(text).strong().color(color))
+        .fill(fill)
+        .corner_radius(egui::CornerRadius::same(8))
+        .min_size(egui::vec2(0.0, 36.0));
     ui.add_enabled(enabled, button)
 }
 
 fn secondary(ui: &mut egui::Ui, text: &str, enabled: bool) -> egui::Response {
-    let button = egui::Button::new(egui::RichText::new(text).color(TEXT))
+    let color = if enabled { TEXT } else { MUTED };
+    let button = egui::Button::new(egui::RichText::new(text).color(color))
         .corner_radius(egui::CornerRadius::same(8))
         .min_size(egui::vec2(0.0, 36.0));
     ui.add_enabled(enabled, button)
@@ -281,7 +284,7 @@ fn field(ui: &mut egui::Ui, label: &str, value: &str) {
 
 fn step_header(ui: &mut egui::Ui, number: usize, title: &str, subtitle: &str) {
     ui.label(
-        egui::RichText::new(format!("STEP {number} OF 5"))
+        egui::RichText::new(format!("STEP {number} OF 6"))
             .color(ACCENT)
             .size(11.0)
             .strong(),
@@ -340,6 +343,18 @@ impl App {
             busy: false,
             progress: 0.0,
             rx: None,
+            play_ids: if demo {
+                Some(core::magisk::PlayIds {
+                    android_id: "0123456789abcdef".into(),
+                    gsf_value: Some("3f2a1234abcd5678".into()),
+                    gsf_hex: Some("3f2a1234abcd5678".into()),
+                    gsf_decimal: Some(0x3f2a1234abcd5678),
+                    raw: Some("android_id|3f2a1234abcd5678".into()),
+                    via: "sqlite3 (Google uncertified command)",
+                })
+            } else {
+                None
+            },
             summary: if demo {
                 Some(DeviceSummary {
                     model: "onn11Core".into(),
@@ -367,6 +382,7 @@ impl App {
                 String::new()
             },
             restore_ack: demo,
+            root_ack: demo,
             screenshot_dir,
             shot_index: 0,
             shot_frames: 0,
@@ -389,6 +405,7 @@ impl App {
             Step::Unlock => self.summary.as_ref().is_some_and(|s| s.locked == "0"),
             Step::Backup => self.done_steps.contains(&Step::Backup) || self.backup_ready(),
             Step::Flash => self.done_steps.contains(&Step::Flash),
+            Step::Root => self.done_steps.contains(&Step::Root),
             Step::Restore => self.done_steps.contains(&Step::Restore),
         };
         if done {
@@ -442,6 +459,9 @@ impl App {
                 Msg::BackupDone(path) => {
                     self.backup_text = path.display().to_string();
                     self.push_log(&format!("backup: {}", path.display()));
+                }
+                Msg::PlayIds(ids) => {
+                    self.play_ids = Some(ids);
                 }
                 Msg::StepDone(step) => {
                     self.done_steps.insert(step);
@@ -548,7 +568,8 @@ impl App {
         self.step_item(ui, Step::Unlock, 2, "Unlock bootloader");
         self.step_item(ui, Step::Backup, 3, "Back up stock");
         self.step_item(ui, Step::Flash, 4, "Flash GSI");
-        self.step_item(ui, Step::Restore, 5, "Restore stock");
+        self.step_item(ui, Step::Root, 5, "Root & Play");
+        self.step_item(ui, Step::Restore, 6, "Restore stock");
 
         ui.add_space(16.0);
         ui.separator();
@@ -982,13 +1003,181 @@ impl App {
             "After flashing, do the recovery factory reset (Wipe data/factory reset -> Factory \
              data reset -> Reboot system now). The tool waits for Android to boot.",
         );
+        self.next_row(ui, Some(Step::Root));
+    }
+
+    fn step_root(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        step_header(
+            ui,
+            5,
+            "Root & Play certification",
+            "Optional: Magisk root, Play Integrity and the GSF ID for Play Store certification.",
+        );
+
+        card(ui, |ui| {
+            ui.label(egui::RichText::new("What this does").strong().size(15.0));
+            ui.add_space(4.0);
+            for line in [
+                "Patches the stock init_boot from your backup with Magisk and flashes it",
+                "Installs PlayIntegrityFork (Zygisk module) for Play Integrity verdicts",
+                "Runs Google's uncertified-page command and shows the result to copy",
+            ] {
+                ui.label(
+                    egui::RichText::new(format!("•  {line}"))
+                        .size(13.0)
+                        .color(MUTED),
+                );
+            }
+        });
+
+        ui.add_space(12.0);
+        card(ui, |ui| {
+            ui.label(egui::RichText::new("Stock backup").strong().size(15.0));
+            ui.label(
+                egui::RichText::new(
+                    "Needed for init_boot_<slot>.img; restore puts the stock one back.",
+                )
+                .size(12.5)
+                .color(MUTED),
+            );
+            ui.add_space(6.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut self.backup_text)
+                    .desired_width(f32::INFINITY)
+                    .font(egui::TextStyle::Monospace),
+            );
+            ui.add_space(10.0);
+            ui.checkbox(
+                &mut self.root_ack,
+                "I understand this patches init_boot_<slot>.img and uses the stock backup.",
+            );
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                let ready = !self.busy && self.backup_ready() && self.root_ack;
+                if primary(ui, "Install Magisk (root)", ready).clicked() {
+                    let settings = self.current_settings();
+                    let backup = expand(self.backup_text.trim());
+                    self.start_job(ctx, move |rep, tx| {
+                        core::magisk::install(rep, &settings, &backup, None, false)?;
+                        let _ = tx.send(Msg::StepDone(Step::Root));
+                        Ok(())
+                    });
+                }
+                if secondary(ui, "Install Play Integrity Fix", !self.busy).clicked() {
+                    let settings = self.current_settings();
+                    self.start_job(ctx, move |rep, _tx| {
+                        core::magisk::install_pif(rep, &settings, false)
+                    });
+                }
+                if secondary(ui, "Read GSF ID", !self.busy).clicked() {
+                    self.start_job(ctx, move |rep, tx| {
+                        let ids = core::magisk::play_ids(rep)?;
+                        let _ = tx.send(Msg::PlayIds(ids));
+                        Ok(())
+                    });
+                }
+            });
+        });
+
+        if let Some(ids) = self.play_ids.clone() {
+            ui.add_space(12.0);
+            card(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Play certification")
+                            .strong()
+                            .size(15.0),
+                    );
+                    chip(
+                        ui,
+                        if ids.gsf_hex.is_some() {
+                            "GSF ID FOUND"
+                        } else {
+                            "NEEDS ROOT"
+                        },
+                        if ids.gsf_hex.is_some() { GOOD } else { WARN },
+                    );
+                });
+                ui.add_space(8.0);
+                if let (Some(value), Some(hex), Some(decimal)) =
+                    (&ids.gsf_value, &ids.gsf_hex, ids.gsf_decimal)
+                {
+                    egui::Grid::new("gsf-grid")
+                        .num_columns(2)
+                        .spacing([24.0, 7.0])
+                        .show(ui, |ui| {
+                            field(ui, "GSF ID (paste this)", value);
+                            ui.end_row();
+                            field(ui, "GSF ID (hex)", hex);
+                            ui.end_row();
+                            field(ui, "GSF ID (decimal)", &decimal.to_string());
+                            ui.end_row();
+                            field(ui, "Read from", ids.via);
+                            ui.end_row();
+                        });
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if secondary(ui, "Copy GSF ID", true).clicked() {
+                            ui.ctx().copy_text(value.clone());
+                        }
+                        if secondary(ui, "Copy output", true).clicked() {
+                            if let Some(raw) = &ids.raw {
+                                ui.ctx().copy_text(raw.clone());
+                            }
+                        }
+                        ui.hyperlink_to("Open the registration page", ids.register_url());
+                    });
+                    if let Some(raw) = &ids.raw {
+                        ui.add_space(4.0);
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("command output: {raw}"))
+                                    .monospace()
+                                    .size(11.5)
+                                    .color(MUTED),
+                            )
+                            .selectable(true)
+                            .wrap(),
+                        );
+                    }
+                    ui.label(
+                        egui::RichText::new(
+                            "Register, then clear Play Store data (Settings -> Apps -> Play Store \
+                             -> Storage -> Clear data) and reboot. Certification can take a while.",
+                        )
+                        .size(12.0)
+                        .color(MUTED),
+                    );
+                } else {
+                    ui.label(
+                        egui::RichText::new(
+                            "Google's command needs root: enable rooted USB debugging, or install \
+                             Magisk and grant Shell in its Superuser tab, then read the GSF ID again.",
+                        )
+                        .size(12.5)
+                        .color(MUTED),
+                    );
+                }
+                ui.add_space(6.0);
+                field(ui, "Android ID (not the GSF ID)", &ids.android_id);
+            });
+        }
+
+        ui.add_space(12.0);
+        info(
+            ui,
+            "Magisk v31.1 grants root from its Superuser tab instead of showing prompts, and no \
+             longer hides apps. PlayIntegrityFork v18 needs Zygisk and ships no fingerprint: run \
+             its Action button or add a custom.pif.prop, otherwise it will not fix DEVICE \
+             integrity. Play Store certification itself is fixed by registering the GSF ID.",
+        );
         self.next_row(ui, Some(Step::Restore));
     }
 
     fn step_restore(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         step_header(
             ui,
-            5,
+            6,
             "Restore stock",
             "Put the stock boot, vbmeta and super images back from your backup.",
         );
@@ -1174,6 +1363,7 @@ impl App {
                         Step::Unlock => self.step_unlock(ui, ctx),
                         Step::Backup => self.step_backup(ui, ctx),
                         Step::Flash => self.step_flash(ui, ctx),
+                        Step::Root => self.step_root(ui, ctx),
                         Step::Restore => self.step_restore(ui, ctx),
                     }
                 });
