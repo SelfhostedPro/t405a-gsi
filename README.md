@@ -140,10 +140,10 @@ That is an ID registration issue, not a ROM bug:
 1. Run `t405a-gsi playid` (or *Read GSF ID* in the app). It runs Google's
    uncertified-page command —
    `sqlite3 /data/user/$(cmd activity get-current-user)/*/*/gservices.db "select * from main where name = \"android_id\";"`
-   — as root (rooted USB debugging, or Magisk's Shell) and shows the raw
-   output plus the ID in hex and decimal, with copy buttons. If the shell
-   cannot read `gservices.db`, install root first and grant Shell in Magisk's
-   Superuser tab.
+   — as root through Magisk's Shell and shows the raw output plus the ID in
+   hex and decimal, with copy buttons. If the shell cannot read
+   `gservices.db`, install root first and grant Shell in Magisk's Superuser
+   tab.
 2. Register the ID at <https://www.google.com/android/uncertified/> with the
    Google account used on the tablet. The page accepts either form.
 3. Clear Play Store data (*Settings → Apps → Play Store → Storage → Clear

@@ -109,33 +109,61 @@ fn check_boot_image(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn patched_files() -> Vec<String> {
-    let Some(listing) = adb_quiet(&["shell", "ls", "-t", "/sdcard/Download"]) else {
-        return Vec::new();
-    };
-    listing
-        .lines()
-        .map(str::trim)
-        .filter(|name| name.starts_with("magisk_patched") && name.ends_with(".img"))
-        .map(str::to_string)
-        .collect()
+fn patched_files() -> Option<Vec<String>> {
+    let listing = adb_quiet(&["shell", "ls", "-t", "/sdcard/Download"])?;
+    Some(
+        listing
+            .lines()
+            .map(str::trim)
+            .filter(|name| name.starts_with("magisk_patched") && name.ends_with(".img"))
+            .map(str::to_string)
+            .collect(),
+    )
 }
 
+fn patched_size(name: &str) -> Option<u64> {
+    adb_quiet(&[
+        "shell",
+        "stat",
+        "-c",
+        "%s",
+        &format!("/sdcard/Download/{name}"),
+    ])?
+    .trim()
+    .parse()
+    .ok()
+}
+
+/// Magisk creates the output name before it finishes copying the image. Only
+/// accept a file whose size is non-zero and unchanged across two polls, so a
+/// half-written init_boot is never pulled and flashed.
 fn wait_for_new_patch(
     rep: &dyn Reporter,
     before: &HashSet<String>,
     timeout_secs: u64,
-) -> Result<String> {
+) -> Result<(String, u64)> {
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     let mut warned = false;
+    let mut candidate: Option<(String, u64)> = None;
     while Instant::now() < deadline {
         if device::adb_state() != "device" {
             if !warned {
                 rep.log("waiting for adb to come back...");
                 warned = true;
             }
-        } else if let Some(name) = patched_files().into_iter().find(|n| !before.contains(n)) {
-            return Ok(name);
+        } else if let Some(files) = patched_files() {
+            if let Some(name) = files.into_iter().find(|n| !before.contains(n)) {
+                if let Some(size) = patched_size(&name) {
+                    if size > 0 {
+                        if let Some((cand, cand_size)) = &candidate {
+                            if cand == &name && *cand_size == size {
+                                return Ok((name, size));
+                            }
+                        }
+                        candidate = Some((name, size));
+                    }
+                }
+            }
         }
         std::thread::sleep(Duration::from_secs(4));
     }
@@ -146,21 +174,29 @@ fn wait_for_new_patch(
 }
 
 fn print_plan(rep: &dyn Reporter, backup: &Path, patched: Option<&Path>, slot: &str) {
-    let patched = match patched {
-        Some(path) => path.display().to_string(),
-        None => "<workdir>/magisk/magisk_patched.img".to_string(),
-    };
     rep.log("dry run; would run:");
     rep.log("  adb install -r <workdir>/magisk/Magisk-v31.1.apk");
-    rep.log(&format!(
-        "  adb push {}/init_boot{slot}.img /sdcard/Download/init_boot{slot}.img",
-        backup.display()
-    ));
-    rep.log("  # on the tablet: Magisk -> Install -> Patch firmware / image");
-    rep.log("  #                -> Select from storage -> Download/init_boot<slot>.img");
-    rep.log("  adb pull /sdcard/Download/magisk_patched-*.img <workdir>/magisk/");
+    let image = match patched {
+        Some(path) => {
+            rep.log(&format!(
+                "  # using the supplied patched image {}",
+                path.display()
+            ));
+            path.display().to_string()
+        }
+        None => {
+            rep.log(&format!(
+                "  adb push {}/init_boot{slot}.img /sdcard/Download/init_boot{slot}.img",
+                backup.display()
+            ));
+            rep.log("  # on the tablet: Magisk -> Install -> Patch firmware / image");
+            rep.log("  #                -> Select from storage -> Download/init_boot<slot>.img");
+            rep.log("  adb pull /sdcard/Download/magisk_patched-*.img <workdir>/magisk/");
+            "<workdir>/magisk/magisk_patched.img".to_string()
+        }
+    };
     rep.log("  adb reboot fastboot; fastboot reboot bootloader");
-    rep.log(&format!("  fastboot flash init_boot{slot} {patched}"));
+    rep.log(&format!("  fastboot flash init_boot{slot} {image}"));
     rep.log("  fastboot reboot");
     rep.log("");
     rep.log("This writes init_boot<slot> only; it never touches lk, preloader, seccfg or vbmeta.");
@@ -185,19 +221,7 @@ pub fn install(
         anyhow::bail!("bootloader is locked; unlock first");
     }
     let slot = active_slot(rep)?;
-    let stock = backup_dir.join(format!("init_boot{slot}.img"));
-    if !stock.exists() {
-        anyhow::bail!(
-            "the backup has no init_boot{slot}.img; Magisk patches the stock init_boot for the \
-             active slot"
-        );
-    }
-    if let Some(info) = manifest.partitions.get(&format!("init_boot{slot}")) {
-        if info.sha256 != download::sha256_file(&stock)? {
-            anyhow::bail!("init_boot{slot}.img does not match the backup manifest");
-        }
-        rep.log(&format!("stock init_boot{slot}.img verified"));
-    }
+    install_magisk_app(rep, settings)?;
 
     let image = match patched {
         Some(path) => {
@@ -205,7 +229,22 @@ pub fn install(
             rep.log(&format!("using patched image {}", path.display()));
             path.to_path_buf()
         }
-        None => patch_with_app(rep, settings, &stock, &slot)?,
+        None => {
+            let stock = backup_dir.join(format!("init_boot{slot}.img"));
+            if !stock.exists() {
+                anyhow::bail!(
+                    "the backup has no init_boot{slot}.img; Magisk patches the stock init_boot \
+                     for the active slot"
+                );
+            }
+            if let Some(info) = manifest.partitions.get(&format!("init_boot{slot}")) {
+                if info.sha256 != download::sha256_file(&stock)? {
+                    anyhow::bail!("init_boot{slot}.img does not match the backup manifest");
+                }
+                rep.log(&format!("stock init_boot{slot}.img verified"));
+            }
+            patch_with_app(rep, settings, &stock, &slot)?
+        }
     };
 
     let image_str = image
@@ -255,19 +294,22 @@ pub fn install(
     Ok(())
 }
 
-fn patch_with_app(
-    rep: &dyn Reporter,
-    settings: &Settings,
-    stock: &Path,
-    slot: &str,
-) -> Result<PathBuf> {
+fn install_magisk_app(rep: &dyn Reporter, settings: &Settings) -> Result<()> {
     let apk = ensure_magisk_apk(rep, settings)?;
     let apk_str = apk
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("non-UTF8 APK path"))?;
     rep.log("installing the Magisk app");
     proc::adb_ok(rep, &["install", "-r", apk_str])?;
+    Ok(())
+}
 
+fn patch_with_app(
+    rep: &dyn Reporter,
+    settings: &Settings,
+    stock: &Path,
+    slot: &str,
+) -> Result<PathBuf> {
     let name = format!("init_boot{slot}.img");
     let stock_str = stock
         .to_str()
@@ -278,7 +320,14 @@ fn patch_with_app(
         &["push", stock_str, &format!("/sdcard/Download/{name}")],
     )?;
 
-    let before: HashSet<String> = patched_files().into_iter().collect();
+    let before: HashSet<String> = patched_files()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "could not list /sdcard/Download; refusing to guess which patch file is new"
+            )
+        })?
+        .into_iter()
+        .collect();
     rep.log("");
     rep.log("On the tablet, patch the stock image with Magisk:");
     rep.log("  1. Open Magisk -> Install -> Patch firmware / image");
@@ -286,7 +335,7 @@ fn patch_with_app(
     rep.log("  3. Wait for 'All done!' and return here (do not reboot).");
     rep.log("Watching /sdcard/Download for magisk_patched-*.img (up to 30 minutes)...");
 
-    let device_name = wait_for_new_patch(rep, &before, PATCH_TIMEOUT_SECS)?;
+    let (device_name, device_size) = wait_for_new_patch(rep, &before, PATCH_TIMEOUT_SECS)?;
     if !device_name.ends_with(".img") || device_name.contains('/') {
         anyhow::bail!("unexpected patched file name {device_name:?}");
     }
@@ -302,6 +351,13 @@ fn patch_with_app(
         rep,
         &["pull", &format!("/sdcard/Download/{device_name}"), dest_str],
     )?;
+    let got = fs::metadata(&dest)?.len();
+    if got != device_size {
+        anyhow::bail!(
+            "the pulled image is {got} bytes but the device reported {device_size}; \
+             the file changed while copying"
+        );
+    }
     check_boot_image(&dest)?;
     rep.log(&format!("patched image saved to {}", dest.display()));
     Ok(dest)

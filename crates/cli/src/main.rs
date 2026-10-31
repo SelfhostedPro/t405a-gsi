@@ -186,9 +186,11 @@ fn run() -> anyhow::Result<()> {
                     if let Some(raw) = &ids.raw {
                         println!("command output: {raw:?}");
                     }
-                    println!("Google's command needs root: enable rooted USB debugging or run");
-                    println!("`t405a-gsi root`, grant Shell in Magisk's Superuser tab, then run");
-                    println!("`t405a-gsi playid` again.");
+                    println!("Google's command needs root: run `t405a-gsi root`, grant Shell in");
+                    println!("Magisk's Superuser tab, then run `t405a-gsi playid` again. Do not");
+                    println!(
+                        "use `adb root` on this GSI; it wedges adbd until the tablet reboots."
+                    );
                 }
             }
         }

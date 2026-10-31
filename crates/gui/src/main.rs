@@ -1151,8 +1151,9 @@ impl App {
                 } else {
                     ui.label(
                         egui::RichText::new(
-                            "Google's command needs root: enable rooted USB debugging, or install \
-                             Magisk and grant Shell in its Superuser tab, then read the GSF ID again.",
+                            "Google's command needs root: install Magisk and grant Shell in its \
+                             Superuser tab, then read the GSF ID again. Do not use `adb root` on \
+                             this GSI; it wedges adb until the tablet is rebooted.",
                         )
                         .size(12.5)
                         .color(MUTED),

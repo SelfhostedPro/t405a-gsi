@@ -240,10 +240,11 @@ first and shows its raw output, so the value can be copied straight into the
 page. In order:
 
 - `sqlite3 /data/user/$(cmd activity get-current-user)/*/*/gservices.db
-  "select * from main where name = \"android_id\";"` — executed directly when
-  adbd itself is root (rooted USB debugging) or through Magisk's
-  `su -c '...'` when Shell is granted. The device shell expands the current
-  user and the package/database wildcard;
+  "select * from main where name = \"android_id\";"` — executed through
+  Magisk's `su -c '...'` when Shell is granted (the code also runs it directly
+  if adbd already is root, but never run `adb root` on this GSI; see the
+  warning above). The device shell expands the current user and the
+  package/database wildcard;
 - the same select against the fixed
   `/data/data/com.google.android.gsf/databases/gservices.db` path;
 - `content query --uri content://com.google.android.gsf.gservices --projection
