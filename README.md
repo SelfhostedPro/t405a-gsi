@@ -266,7 +266,7 @@ docs/         device and bootloader technical notes
 
 ## Credits
 
-- Unlock vulnerability, addresses and payload: drakeerv's
+- Unlock vulnerability, addresses and payload: [drakeerv](https://github.com/drakeerv)'s
   [Nura Wiki](https://wiki.nura.eco/wiki/Onn_11_Core_Tablet_%28onn-t405a%29),
   packaged by [phildabill](https://github.com/phildabill/onn-t405a-Bootloader-unlock).
 - Stock partition reference: [el-vertedero/onn_onn11core_dump](https://github.com/el-vertedero/onn_onn11core_dump).
